@@ -28,6 +28,8 @@ use crate::state::set_ble_state;
 pub(crate) mod battery_service;
 pub(crate) mod ble_server;
 pub(crate) mod device_info;
+#[cfg(feature = "ble_diagnostics")]
+pub mod diagnostics;
 pub(crate) mod led;
 #[cfg(feature = "_nrf_ble")]
 pub(crate) mod nrf;
@@ -353,6 +355,23 @@ async fn gatt_events_task(server: &Server<'_>, conn: &GattConnection<'_, '_, Def
                         });
                         let data = &data_buf[..data_len.min(data_buf.len())];
 
+                        #[cfg(feature = "ble_diagnostics")]
+                        if event.handle() == server.diagnostics.command.handle {
+                            let result = if conn.raw().security_level()?.encrypted() {
+                                diagnostics::command(data).err()
+                            } else {
+                                Some(AttErrorCode::INSUFFICIENT_ENCRYPTION)
+                            };
+                            let reply = match result {
+                                Some(code) => gatt_event.reject(code),
+                                None => gatt_event.accept(),
+                            };
+                            if let Ok(reply) = reply {
+                                reply.send().await;
+                            }
+                            continue;
+                        }
+
                         if event.handle() == output_keyboard.handle {
                             if data_len == 1 {
                                 let led_indicator = LedIndicator::from_bits(data[0]);
@@ -642,6 +661,8 @@ async fn run_ble_keyboard<
     #[cfg(feature = "storage")] active_bond_info: Option<crate::ble::profile::ProfileInfo>,
     config: &BleBatteryConfig<'a>,
 ) {
+    #[cfg(feature = "ble_diagnostics")]
+    let _diagnostic_guard = diagnostics::connected();
     let mut ble_hid_server = BleHidServer::new(server, conn);
     let mut ble_led_reader = BleLedReader;
     let mut ble_battery_server = config.enabled.then(|| BleBatteryServer::new(server, conn));
@@ -694,6 +715,8 @@ async fn run_ble_keyboard<
     #[cfg(not(feature = "host"))]
     let host_task = core::future::pending::<()>();
 
+    #[cfg(feature = "ble_diagnostics")]
+    let host_task = embassy_futures::join::join(host_task, diagnostics::run(server.diagnostics.data, conn));
     let inner = embassy_futures::join::join3(writer_task, led_task, host_task);
     select(communication_task, inner).await;
 }

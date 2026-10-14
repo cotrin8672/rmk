@@ -275,6 +275,7 @@ impl<SPI: SpiBus, CS: OutputPin, MOTION: InputPin + Wait> Pmw3610<SPI, CS, MOTIO
     }
 
     async fn configure(&mut self) -> Result<(), Pmw3610Error> {
+        self.smart_flag = false;
         self.write_reg(PMW3610_POWER_UP_RESET, POWER_UP_RESET_VAL).await?;
         Timer::after(Duration::from_millis(RESET_DELAY_MS)).await;
 
@@ -343,6 +344,30 @@ impl<SPI: SpiBus, CS: OutputPin, MOTION: InputPin + Wait> Pmw3610<SPI, CS, MOTIO
             .map_err(|_| Pmw3610Error::Spi)?;
 
         info!("PMW3610 initialized successfully");
+        Ok(())
+    }
+
+    /// Capture the sensor's real 22x22 7-bit frame. Navigation pauses during this call.
+    /// Always reset and restore configuration, including CPI, even after a failed capture.
+    #[cfg(feature = "ble_diagnostics")]
+    pub async fn capture_frame(&mut self, pixels: &mut [u8; 484]) -> Result<(), PointingDriverError> {
+        let captured = self.capture_pixels(pixels).await;
+        self.init().await?;
+        captured.map_err(Into::into)
+    }
+
+    #[cfg(feature = "ble_diagnostics")]
+    async fn capture_pixels(&mut self, pixels: &mut [u8; 484]) -> Result<(), Pmw3610Error> {
+        // PixArt full datasheet R2.4, p17: frame burst, not repeated motion reads.
+        self.write_reg(PMW3610_PERFORMANCE, 0xf1).await?;
+        self.spi_clk_on().await?;
+        self.write_reg(PMW3610_SMART_MODE, 0x10).await?;
+        self.write_reg(0x36, 0x80).await?;
+        Timer::after(Duration::from_millis(10)).await;
+        self.read_burst(PMW3610_BURST_READ, pixels).await?;
+        for pixel in pixels {
+            *pixel &= 0x7f;
+        }
         Ok(())
     }
 
@@ -449,6 +474,7 @@ where
 
         self.spi_clk_off().await?;
 
+        self.config.res_cpi = cpi as i16;
         debug!("PMW3610: Resolution set to {} CPI", cpi);
         Ok(())
     }

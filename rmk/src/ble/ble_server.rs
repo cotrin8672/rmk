@@ -14,12 +14,22 @@ pub(crate) const CCCD_TABLE_SIZE: usize = trouble_host::config::CLIENT_ATT_TABLE
 // `gatt_server` compiles every member regardless of the surrounding `cfg` —
 // gating an individual field with `#[cfg(feature = "host")]` doesn't work. So
 // the whole struct is duplicated, with and without `host_service`.
-#[cfg(feature = "host")]
+#[cfg(all(feature = "host", not(feature = "ble_diagnostics")))]
 #[gatt_server]
 pub(crate) struct Server {
     pub(crate) battery_service: BatteryService,
     pub(crate) hid_service: HidService,
     pub(crate) host_service: VialService,
+    pub(crate) device_config_service: DeviceConfigurationService,
+}
+
+#[cfg(feature = "ble_diagnostics")]
+#[gatt_server]
+pub(crate) struct Server {
+    pub(crate) battery_service: BatteryService,
+    pub(crate) hid_service: HidService,
+    pub(crate) host_service: VialService,
+    pub(crate) diagnostics: super::diagnostics::DiagnosticService,
     pub(crate) device_config_service: DeviceConfigurationService,
 }
 

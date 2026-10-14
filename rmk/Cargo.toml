@@ -168,6 +168,9 @@ usb_log = ["dep:embassy-usb-logger", "log"]
 ## Use log, this feature cannot be enabled when defmt is enabled
 log = ["dep:log", "trouble-host?/log"]
 
+## Optional, sensor-only Web Bluetooth diagnostic service alongside keyboard HID.
+ble_diagnostics = ["_ble", "host"]
+
 ## Activate the embassy-time mock driver for deterministic, fast test timing.
 ## (Despite the historic name, this feature does NOT enable embassy-time/std —
 ## it swaps in the manually-advanced mock clock that the test harness drives
