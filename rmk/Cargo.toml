@@ -170,6 +170,8 @@ log = ["dep:log", "trouble-host?/log"]
 
 ## Optional, sensor-only Web Bluetooth diagnostic service alongside keyboard HID.
 ble_diagnostics = ["_ble", "host"]
+## Dedicated, batched USB HID sensor diagnostics without the USB debug logger.
+usb_diagnostics = ["host"]
 
 ## Activate the embassy-time mock driver for deterministic, fast test timing.
 ## (Despite the historic name, this feature does NOT enable embassy-time/std —

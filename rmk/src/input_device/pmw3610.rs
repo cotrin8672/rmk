@@ -349,14 +349,14 @@ impl<SPI: SpiBus, CS: OutputPin, MOTION: InputPin + Wait> Pmw3610<SPI, CS, MOTIO
 
     /// Capture the sensor's real 22x22 7-bit frame. Navigation pauses during this call.
     /// Always reset and restore configuration, including CPI, even after a failed capture.
-    #[cfg(feature = "ble_diagnostics")]
+    #[cfg(any(feature = "ble_diagnostics", feature = "usb_diagnostics"))]
     pub async fn capture_frame(&mut self, pixels: &mut [u8; 484]) -> Result<(), PointingDriverError> {
         let captured = self.capture_pixels(pixels).await;
         self.init().await?;
         captured.map_err(Into::into)
     }
 
-    #[cfg(feature = "ble_diagnostics")]
+    #[cfg(any(feature = "ble_diagnostics", feature = "usb_diagnostics"))]
     async fn capture_pixels(&mut self, pixels: &mut [u8; 484]) -> Result<(), Pmw3610Error> {
         // PixArt full datasheet R2.4, p17: frame burst, not repeated motion reads.
         self.write_reg(PMW3610_PERFORMANCE, 0xf1).await?;

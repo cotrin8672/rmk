@@ -25,6 +25,11 @@ use crate::hid::{
 use crate::light::UsbLedReader;
 use crate::state::{current_usb_state, set_usb_state};
 
+#[cfg(feature = "usb_diagnostics")]
+pub mod diagnostic_protocol;
+#[cfg(feature = "usb_diagnostics")]
+pub mod diagnostics;
+
 pub(crate) static USB_REMOTE_WAKEUP: Signal<RawMutex, ()> = Signal::new();
 
 /// Borrowed view over the USB HID IN endpoints used by the report writer task.
@@ -161,9 +166,9 @@ pub(crate) fn new_usb_builder<'d, D: Driver<'d>>(driver: D, keyboard_config: Dev
     usb_config.composite_with_iads = true;
 
     // Extra interfaces (usb_log, steno, dfu) overflow the 128-byte config descriptor buffer.
-    #[cfg(any(feature = "usb_log", feature = "steno", feature = "dfu"))]
+    #[cfg(any(feature = "usb_log", feature = "steno", feature = "dfu", feature = "usb_diagnostics"))]
     const USB_BUF_SIZE: usize = 256;
-    #[cfg(not(any(feature = "usb_log", feature = "steno", feature = "dfu")))]
+    #[cfg(not(any(feature = "usb_log", feature = "steno", feature = "dfu", feature = "usb_diagnostics")))]
     const USB_BUF_SIZE: usize = 128;
 
     // Control buffer must be large enough for the largest DFU transfer block.
@@ -204,6 +209,8 @@ pub struct UsbTransport<D: Driver<'static>> {
     steno_writer: HidWriter<'static, D, 9>,
     #[cfg(feature = "host")]
     host_rw: HidReaderWriter<'static, D, 32, 32>,
+    #[cfg(feature = "usb_diagnostics")]
+    diagnostic_rw: HidReaderWriter<'static, D, 64, 64>,
     #[cfg(feature = "usb_log")]
     logger: Option<embassy_usb::class::cdc_acm::CdcAcmClass<'static, D>>,
 }
@@ -236,6 +243,8 @@ impl<D: Driver<'static>> UsbTransport<D> {
         let steno_writer = add_usb_writer!(&mut builder, StenoReport, 9, 16);
         #[cfg(feature = "host")]
         let host_rw = add_usb_reader_writer!(&mut builder, ViaReport, 32, 32, 32);
+        #[cfg(feature = "usb_diagnostics")]
+        let diagnostic_rw = diagnostics::add(&mut builder);
         #[cfg(feature = "usb_log")]
         let logger = Some(add_usb_logger!(&mut builder));
 
@@ -265,6 +274,8 @@ impl<D: Driver<'static>> UsbTransport<D> {
             steno_writer,
             #[cfg(feature = "host")]
             host_rw,
+            #[cfg(feature = "usb_diagnostics")]
+            diagnostic_rw,
             #[cfg(feature = "usb_log")]
             logger,
         }
@@ -282,6 +293,8 @@ impl<D: Driver<'static>> Runnable for UsbTransport<D> {
             steno_writer,
             #[cfg(feature = "host")]
             host_rw,
+            #[cfg(feature = "usb_diagnostics")]
+            diagnostic_rw,
             #[cfg(feature = "usb_log")]
             logger,
         } = self;
@@ -318,6 +331,9 @@ impl<D: Driver<'static>> Runnable for UsbTransport<D> {
             let host_task = crate::host::usb::run_usb_host(host_rw);
             #[cfg(not(feature = "host"))]
             let host_task = core::future::pending::<()>();
+
+            #[cfg(feature = "usb_diagnostics")]
+            let host_task = embassy_futures::join::join(host_task, diagnostics::run(diagnostic_rw));
 
             #[cfg(feature = "usb_log")]
             {
